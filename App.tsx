@@ -96,8 +96,21 @@ const AUDIENCE_PRESETS = [
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(() => {
-      const savedUser = localStorage.getItem('app_user');
-      return savedUser ? JSON.parse(savedUser) : null;
+      try {
+          const savedUser = localStorage.getItem('app_user');
+          if (!savedUser) return null;
+          const parsed: unknown = JSON.parse(savedUser);
+          if (parsed && typeof parsed === 'object' &&
+              typeof (parsed as User).id === 'string' &&
+              typeof (parsed as User).email === 'string' &&
+              typeof (parsed as User).token === 'string') {
+              return parsed as User;
+          }
+      } catch (error) {
+          console.warn('Saved user data is invalid; clearing it.', error);
+      }
+      localStorage.removeItem('app_user');
+      return null;
   });
 
   const [campaigns, setCampaigns] = useState<Campaign[]>(MOCK_CAMPAIGNS);
@@ -158,8 +171,9 @@ const App: React.FC = () => {
       }
   }, [campaigns, isStorageLoaded]);
 
+  // Demo-only identity. This is not authentication and must not protect real user data.
   const handleLogin = (email: string) => {
-    setUser({ id: 'user-123', email, token: 'mock-jwt-token' });
+    setUser({ id: 'demo-user', email, token: 'demo-only' });
     setView('dashboard');
   };
   const handleLogout = () => {
@@ -259,8 +273,13 @@ const App: React.FC = () => {
 
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCampaignData.topic || !newCampaignData.title || newCampaignData.platforms.length === 0) {
+    if (!newCampaignData.topic.trim() || !newCampaignData.title.trim() || newCampaignData.platforms.length === 0) {
         alert("يرجى ملء جميع الحقول المطلوبة واختيار منصة واحدة على الأقل.");
+        return;
+    }
+    if (!Number.isInteger(newCampaignData.durationDays) || newCampaignData.durationDays < 1 || newCampaignData.durationDays > 30 ||
+        !Number.isInteger(newCampaignData.postsPerDay) || newCampaignData.postsPerDay < 1 || newCampaignData.postsPerDay > 5) {
+        alert("المدة يجب أن تكون بين 1 و30 يومًا، وعدد المنشورات اليومية بين 1 و5.");
         return;
     }
 
@@ -497,7 +516,7 @@ const App: React.FC = () => {
                         min={1} 
                         max={30}
                         value={newCampaignData.durationDays}
-                        onChange={(e) => setNewCampaignData({...newCampaignData, durationDays: parseInt(e.target.value)})}
+                        onChange={(e) => setNewCampaignData({...newCampaignData, durationDays: e.target.value === '' ? 0 : Number(e.target.value)})}
                     />
                     <Input 
                         label="عدد المنشورات يومياً" 
@@ -505,7 +524,7 @@ const App: React.FC = () => {
                         min={1} 
                         max={5}
                         value={newCampaignData.postsPerDay}
-                        onChange={(e) => setNewCampaignData({...newCampaignData, postsPerDay: parseInt(e.target.value)})}
+                        onChange={(e) => setNewCampaignData({...newCampaignData, postsPerDay: e.target.value === '' ? 0 : Number(e.target.value)})}
                     />
                   </div>
                   
@@ -569,16 +588,20 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="bg-white p-4 rounded-lg shadow mb-6">
-                    <div className="flex justify-between text-sm font-medium mb-1">
-                        <span>تقدم الحملة</span>
-                        <span>{Math.round((selectedCampaign.posts.filter(p => p.status === 'published').length / selectedCampaign.posts.length) * 100)}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                        <div 
-                            className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500" 
-                            style={{ width: `${(selectedCampaign.posts.filter(p => p.status === 'published').length / selectedCampaign.posts.length) * 100}%` }}
-                        ></div>
-                    </div>
+                    {(() => {
+                        const total = selectedCampaign.posts.length;
+                        const published = selectedCampaign.posts.filter(p => p.status === 'published').length;
+                        const progress = total > 0 ? Math.round((published / total) * 100) : 0;
+                        return <>
+                            <div className="flex justify-between text-sm font-medium mb-1">
+                                <span>تقدم الحملة</span>
+                                <span>{progress}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                <div className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
+                            </div>
+                        </>;
+                    })()}
                 </div>
 
                 <div className="mb-4 flex justify-between items-end">
